@@ -3,6 +3,9 @@ var cheerio = require('cheerio');
 var Table   = require('cli-table');
 var wrap    = require('wordwrap')(9, 80);
 var colors  = require('colors');
+var config  = require('./config.js');
+var store   = require('tough-cookie-filestore');
+var fs      = require('fs');
 
 module.exports = function () {
 
@@ -14,7 +17,19 @@ module.exports = function () {
 
     /* Request-vars */
     var request    = require('request');
-    this.cookieJar = request.jar();
+
+    /* Path to cookie store */
+    this.cookieStoreFilePath = (new config()).getHomeDir() + "/.itscookiestore";
+
+    /* touch-cookie-filestore expects the cookie store file to exist */
+    if (!fs.existsSync(this.cookieStoreFilePath )) {
+        fs.writeFileSync(this.cookieStoreFilePath, '');
+    }
+    /* tough-cookie-filestore */
+    this.cookieStore = new store(this.cookieStoreFilePath);
+
+    /* cookie har with file store backend */
+    this.cookieJar = request.jar(this.cookieStore);
 
     /* Credentials */
     this.username;
@@ -55,20 +70,39 @@ module.exports = function () {
      * - Attempts to authenticate with the provided driver
      */
     this.authenticate = function (success, fail) {
-        this.authenticationDriver(
-            this.username,
-            this.password,
-            this.cookieJar,
-            /* Success */
-            function () {
-                success();
-            },
-            /* Fail */
-            function (error) {
-                fail();
-            }
-        );
-    }
+        /* As of now there is no(?) reliable way of getting schoolUrl without invoking the
+         * driver. So, as a workaround, we save the schoolUrl in the cookie store as well
+         * with a custom domain key, and attempt to load it here. If it's set, we assume
+         * there's a live session going.
+         *
+         * FIXME: Handle server-side timeouts (the cookies themselves have long (several months) expiry dates)
+         */
+        var cookies = this.cookieJar.getCookies('http://itslearningcli');
+        if (cookies.length) {
+            this.schoolUrl = cookies[0].value;
+            success();
+        }
+        else {
+            var self = this;
+            this.authenticationDriver(
+                this.username,
+                this.password,
+                this.cookieJar,
+                /* Success */
+                function () {
+                    success();
+                    /*
+                     * After a successful request, save the schoolUrl to the cookie store.
+                     */
+                    self.cookieJar.setCookie('schoolUrl=' + self.schoolUrl, 'http://itslearningcli');
+                },
+                /* Fail */
+                function (error) {
+                    fail();
+                }
+            );
+        }
+    };
 
     /*
      * createOptions

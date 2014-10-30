@@ -32,6 +32,7 @@
     "prompt": "^0.2.14",
     "request": "^2.44.0",
     "colors": "^0.6.2",
-    "wordwrap": "0.0.2"
+    "wordwrap": "0.0.2",
+    "tough-cookie-filestore": "^0.0.1"
   }
 }
